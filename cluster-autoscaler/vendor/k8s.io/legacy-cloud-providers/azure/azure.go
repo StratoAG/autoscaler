@@ -325,7 +325,7 @@ func (az *Cloud) InitializeCloudFromConfig(config *Config, fromSecret bool) erro
 		}
 	}
 
-	env, err := auth.ParseAzureEnvironment(config.Cloud, config.ResourceManagerEndpoint, config.IdentitySystem)
+	env, err := auth.ParseAzureEnvironment(config.Cloud)
 	if err != nil {
 		return err
 	}
