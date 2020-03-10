@@ -28,7 +28,6 @@ import (
 	"k8s.io/klog"
 )
 
-// var _ cloudprovider.CloudProvider = (*IECloudProvider)(nil)
 var _ cloudprovider.CloudProvider = &IECloudProvider{}
 
 const (

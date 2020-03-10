@@ -1,7 +1,6 @@
 package iec
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/profitbricks/profitbricks-sdk-go/v5"
@@ -22,7 +21,7 @@ const (
 type NodeGroup struct {
 	id          string
 	clusterID   string
-	ionosClient Client
+	ionosClient client
 	nodePool    *profitbricks.KubernetesNodePool
 
 	minSize int
@@ -47,7 +46,6 @@ func (n *NodeGroup) TargetSize() (int, error) {
 
 // Increases node group size
 func (n *NodeGroup) IncreaseSize(delta int) error {
-	ctx := context.Background()
 	if delta <= 0 {
 		return fmt.Errorf("delta must be positive, have: %d", delta)
 	}
@@ -64,19 +62,19 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 	upgradeInputProperties.NodeCount = targetSize
 	upgradeInput.Properties = &upgradeInputProperties
 
-	_, err := n.ionosClient.UpdateNodePool(ctx, n.clusterID, n.nodePool.ID, &upgradeInput)
+	_, err := n.ionosClient.UpdateKubernetesNodePool(n.clusterID, n.nodePool.ID, upgradeInput)
 	if err != nil {
 		return err
 	}
 	err = wait.PollImmediate(
 		n.ionosClient.PollInterval(),
 		n.ionosClient.PollTimeout(),
-		n.ionosClient.PollNodePoolNodeCount(ctx, n.clusterID, n.nodePool.ID, targetSize))
+		n.ionosClient.PollNodePoolNodeCount(n.clusterID, n.nodePool.ID, targetSize))
 	if err != nil {
 		return fmt.Errorf("failed to wait for nodepool update: %v", err)
 	}
 
-	n.nodePool, err = n.ionosClient.GetNodePool(ctx, n.clusterID, n.nodePool.ID)
+	n.nodePool, err = n.ionosClient.GetKubernetesNodePool(n.clusterID, n.nodePool.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get nodepool")
 	}
@@ -88,13 +86,12 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 // given node doesn't belong to this node group. This function should wait
 // until node group size is updated. Implementation required.
 func (n *NodeGroup) DeleteNodes(kubernetesNodes []*apiv1.Node) error {
-	ctx := context.Background()
 
 	for _, node := range kubernetesNodes {
 		// Use node.Spec.ProviderID as to retrieve nodeID
 		nodeID := strings.TrimPrefix(node.Spec.ProviderID, providerIDPrefix)
 
-		err := n.ionosClient.DeleteNode(ctx, n.clusterID, n.id, nodeID)
+		_, err := n.ionosClient.DeleteKubernetesNode(n.clusterID, n.id, nodeID)
 		if err != nil {
 			return fmt.Errorf("deleting node failed for cluster: %q node pool: %q node: %q: %v",
 				n.clusterID, n.id, nodeID, err)
@@ -103,7 +100,7 @@ func (n *NodeGroup) DeleteNodes(kubernetesNodes []*apiv1.Node) error {
 		err = wait.PollImmediate(
 			n.ionosClient.PollInterval(),
 			n.ionosClient.PollTimeout(),
-			n.ionosClient.PollNodePoolNodeCount(ctx, n.clusterID, n.nodePool.ID, targetSize))
+			n.ionosClient.PollNodePoolNodeCount(n.clusterID, n.nodePool.ID, targetSize))
 		if err != nil {
 			return fmt.Errorf("failed to wait for nodepool update: %v", err)
 		}
@@ -118,7 +115,6 @@ func (n *NodeGroup) DeleteNodes(kubernetesNodes []*apiv1.Node) error {
 // It is assumed that cloud provider will not delete the existing nodes when there
 // is an option to just decrease the target. Implementation required.
 func (n *NodeGroup) DecreaseTargetSize(delta int) error {
-	ctx := context.Background()
 	if delta >= 0 {
 		return fmt.Errorf("delta must be negative, have: %d", delta)
 	}
@@ -134,7 +130,7 @@ func (n *NodeGroup) DecreaseTargetSize(delta int) error {
 	upgradeInputProperties.NodeCount = uint32(targetSize)
 	upgradeInput.Properties = &upgradeInputProperties
 
-	updatedNodePool, err := n.ionosClient.UpdateNodePool(ctx, n.clusterID, n.nodePool.ID, &upgradeInput)
+	updatedNodePool, err := n.ionosClient.UpdateKubernetesNodePool(n.clusterID, n.nodePool.ID, upgradeInput)
 	if err != nil {
 		return err
 	}
@@ -163,17 +159,16 @@ func (n *NodeGroup) Debug() string {
 // required that Instance objects returned by this method have Id field set.
 // Other fields are optional.
 func (n *NodeGroup) Nodes() ([]cloudprovider.Instance, error) {
-	ctx := context.Background()
 	if n.nodePool == nil {
 		return nil, errors.New("node pool instance is not created")
 	}
-	nodes, err := n.ionosClient.GetNodes(ctx, n.clusterID, n.id)
+	nodes, err := n.ionosClient.ListKubernetesNodes(n.clusterID, n.id)
 	if err != nil {
 		return nil, fmt.Errorf("getting nodes for cluster: %q node pool: %q: %v",
 			n.clusterID, n.id, err)
 	}
 
-	return toInstances(nodes), nil
+	return toInstances(nodes.Items), nil
 }
 
 // TemplateNodeInfo returns a schedulernodeinfo.NodeInfo structure of an empty

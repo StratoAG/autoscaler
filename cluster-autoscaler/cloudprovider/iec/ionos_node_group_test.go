@@ -17,29 +17,20 @@ limitations under the License.
 package iec
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/profitbricks/profitbricks-sdk-go/v5"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	ionosmock "k8s.io/autoscaler/cluster-autoscaler/cloudprovider/iec/mocks/ionos"
 )
 
-var (
-	none  = uint32(0)
-	one   = uint32(1)
-	two   = uint32(2)
-	three = uint32(3)
-	ten   = uint32(10)
-)
-
-func testNodeGroup(client Client, inp *profitbricks.KubernetesNodePool) NodeGroup {
+func testNodeGroup(client client, inp *profitbricks.KubernetesNodePool) NodeGroup {
 	var minNodes, maxNodes int
 	var id string
 	if inp != nil {
@@ -63,15 +54,35 @@ func testNodeGroup(client Client, inp *profitbricks.KubernetesNodePool) NodeGrou
 
 }
 
-func initNodeGroup(size uint32, client *ionosmock.Client) NodeGroup {
-	return testNodeGroup(client, &profitbricks.KubernetesNodePool{
-		ID: "1",
+// TODO: Add autoscaling limits to signature
+func initNodeGroup(
+	size uint32,
+	ionosclient *ionosmock.Client,
+	) NodeGroup {
+	client := client{
+		Client: ionosclient,
+		pollInterval: time.Millisecond * 10,
+		pollTimeout: time.Millisecond * 200,
+	}
+	return testNodeGroup(client, initK8sNodePool(size, "123", profitbricks.StateAvailable))
+}
+
+func initK8sNodePool(nodecount uint32, id, state string) *profitbricks.KubernetesNodePool{
+	np := &profitbricks.KubernetesNodePool{
 		Properties: &profitbricks.KubernetesNodePoolProperties{
-			NodeCount: size,
+			NodeCount: nodecount,
 		},
-//		AutoscalingLimitMin: 1,
-//		AutoscalingLimitMax: 10,
-	})
+		Metadata: &profitbricks.Metadata{
+			State: profitbricks.StateAvailable,
+		},
+		// TODO: Add autoscaling limits to created nodegroup
+		//		AutoscalingLimitMin: 1,
+		//		AutoscalingLimitMax: 10,
+	}
+	if id != "" {
+		np.ID = id
+	}
+	return np
 }
 
 func TestNodeGroup_Target_size(t *testing.T) {
@@ -79,24 +90,15 @@ func TestNodeGroup_Target_size(t *testing.T) {
 		numberOfNodes := uint32(3)
 
 		client := ionosmock.Client{}
-		ng := testNodeGroup(&client, &profitbricks.KubernetesNodePool{
-			ID: "123",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: numberOfNodes,
-			},
-			// AutoscalingLimitMin: 1
-			// AutoscalingLimitMax: 3
-		})
+		ng := initNodeGroup(numberOfNodes, &client)
 
 		size, err := ng.TargetSize()
 		assert.NoError(t, err)
-		assert.Equal(t, numberOfNodes, uint32(size), "target size is not correct")
+		assert.EqualValues(t, numberOfNodes, size, "target size is not correct")
 	})
 }
 
 func TestNodeGroup_IncreaseSize(t *testing.T) {
-	ctx := context.TODO()
-
 	t.Run("success", func(t *testing.T) {
 		// TODO: Remove as soon as autoscaling limits are implemented
 		t.Skip("Missing autoscalingLimits")
@@ -106,25 +108,14 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, &client)
 
 		newCount := numberOfNodes + delta
-		updateInput := profitbricks.KubernetesNodePool{
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
-		updatedNodePool := profitbricks.KubernetesNodePool{
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
-		client.On("UpdateNodePool", ctx, ng.clusterID, ng.id, &updateInput).
-			Return(&updatedNodePool, nil).Once()
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
+		updated := initK8sNodePool(newCount, "", profitbricks.StateAvailable)
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+			Return(updated, nil).Once()
 		// Poll 5 times before it became true
-		//		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, ng.nodePool.ID).
-		//			Return(wait.ConditionFunc(func() (bool, error) { return false, nil })).Times(4)
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, ng.nodePool.ID).
-			Return(wait.ConditionFunc(func() (bool, error) { return true, nil })).Once()
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(ng.nodePool, nil).Times(4)
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(updated, nil).Once()
 
 		err := ng.IncreaseSize(int(delta))
 		assert.NoError(t, err)
@@ -140,27 +131,19 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, &client)
 
 		newCount := numberOfNodes + delta
-		updateInput := profitbricks.KubernetesNodePool{
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
-		updatedNodePool := profitbricks.KubernetesNodePool{
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
+		updated := initK8sNodePool(newCount, "", profitbricks.StateAvailable)
 
-		client.On("UpdateNodePool", ctx, ng.clusterID, ng.id, &updateInput).
-			Return(&updatedNodePool, nil).Once()
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, ng.nodePool.ID).
-			Return(wait.ConditionFunc(func() (bool, error) { return true, nil }))
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+			Return(updated, nil).Once()
+		// Poll 5 times before it became true
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(ng.nodePool, nil).Times(4)
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(updated, nil).Once()
 
 		err := ng.IncreaseSize(int(delta))
 		assert.NoError(t, err)
-
+		client.AssertExpectations(t)
 	})
 
 	t.Run("negative increase", func(t *testing.T) {
@@ -198,67 +181,45 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 	})
 
 	t.Run("PollNodePoolNodeCount fails", func(t *testing.T) {
-		// TODO: Remove as soon as autoscaling limits are implemented
 		delta := uint32(2)
 		numberOfNodes := uint32(1)
 		client := ionosmock.Client{}
 		ng := initNodeGroup(numberOfNodes, &client)
 
 		newCount := numberOfNodes + delta
-		updateInput := profitbricks.KubernetesNodePool{
-			ID: "1",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
-		updatedNodePool := profitbricks.KubernetesNodePool{
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
+		updated := initK8sNodePool(newCount, "123", profitbricks.StateAvailable)
 
 		pollError := errors.New("Oops something went wrong")
 
-		client.On("UpdateNodePool", ctx, ng.clusterID, ng.id, &updateInput).
-			Return(&updatedNodePool, nil).Once()
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, ng.nodePool.ID, uint32(3)).
-			Return(wait.ConditionFunc(func() (bool, error) { return false, errors.New("Oops something went wrong") }))
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+			Return(updated, nil).Once()
+		// Poll 5 times before it errors
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(ng.nodePool, nil).Times(4)
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(nil, pollError).Once()
 
 		err := ng.IncreaseSize(int(delta))
+		client.AssertExpectations(t)
 		assert.EqualError(t, err, fmt.Errorf("failed to wait for nodepool update: %v", pollError).Error(),
 			"Wrong error")
 	})
 
-	t.Run("PollNodePoolNodeCount never becomes true", func(t *testing.T) {
-		// TODO: Remove as soon as autoscaling limits are implemented
+	t.Run("UpdateKubernetesNode times out", func(t *testing.T) {
 		delta := uint32(2)
 		numberOfNodes := uint32(1)
 		client := ionosmock.Client{}
 		ng := initNodeGroup(numberOfNodes, &client)
 
 		newCount := numberOfNodes + delta
-		updateInput := profitbricks.KubernetesNodePool{
-			ID: "1",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
-		updatedNodePool := profitbricks.KubernetesNodePool{
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
+		updated := initK8sNodePool(newCount, "123", profitbricks.StateAvailable)
 
 		pollError := errors.New("timed out waiting for the condition")
 
-		client.On("UpdateNodePool", ctx, ng.clusterID, ng.id, &updateInput).
-			Return(&updatedNodePool, nil).Once()
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, ng.nodePool.ID, uint32(3)).
-			Return(wait.ConditionFunc(func() (bool, error) { return false, nil }))
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+			Return(updated, nil).Once()
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(ng.nodePool, nil)
 
 		err := ng.IncreaseSize(int(delta))
 		assert.EqualError(t, err, fmt.Errorf("failed to wait for nodepool update: %v", pollError).Error(),
@@ -267,8 +228,6 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 }
 
 func TestNodeGroup_DecreaseTargetSize(t *testing.T) {
-	ctx := context.TODO()
-
 	t.Run("success", func(t *testing.T) {
 		delta := -1
 		numberOfNodes := uint32(3)
@@ -276,27 +235,13 @@ func TestNodeGroup_DecreaseTargetSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, &client)
 
 		newCount := uint32(int(numberOfNodes) + delta)
-		updateInput := profitbricks.KubernetesNodePool{
-			ID: "1",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
-		updatedNodePool := profitbricks.KubernetesNodePool{
-			ID: "1",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
+		updated := initK8sNodePool(newCount, "123", profitbricks.StateAvailable)
 
-		client.On("UpdateNodePool", ctx, ng.clusterID, ng.id, &updateInput).
-			Return(&updatedNodePool, nil)
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, ng.nodePool.ID, newCount).
-			Return(wait.ConditionFunc(func() (bool, error) { return true, nil }))
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+			Return(updated, nil)
 
 		err := ng.DecreaseTargetSize(delta)
+		client.AssertExpectations(t)
 		assert.NoError(t, err)
 	})
 
@@ -307,26 +252,13 @@ func TestNodeGroup_DecreaseTargetSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, &client)
 
 		newCount := uint32(int(numberOfNodes) + delta)
-		updateInput := profitbricks.KubernetesNodePool{
-			ID: "1",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
-		updatedNodePool := profitbricks.KubernetesNodePool{
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: newCount,
-			},
-		}
+		updated := initK8sNodePool(newCount, "123", profitbricks.StateAvailable)
 
-		client.On("UpdateNodePool", ctx, ng.clusterID, ng.id, &updateInput).
-			Return(&updatedNodePool, nil).Once()
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, ng.nodePool.ID, uint32(1)).
-			Return(wait.ConditionFunc(func() (bool, error) { return true, nil }))
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+			Return(updated, nil).Once()
 
 		err := ng.DecreaseTargetSize(delta)
+		client.AssertExpectations(t)
 		assert.NoError(t, err)
 	})
 
@@ -366,7 +298,6 @@ func TestNodeGroup_DecreaseTargetSize(t *testing.T) {
 }
 
 func TestNodeGroup_DeleteNodes(t *testing.T) {
-	ctx := context.TODO()
 	client := ionosmock.Client{}
 
 	nodes := []*corev1.Node{
@@ -388,96 +319,90 @@ func TestNodeGroup_DeleteNodes(t *testing.T) {
 	}
 
 	t.Run("success", func(t *testing.T) {
-		ng := testNodeGroup(&client, &profitbricks.KubernetesNodePool{
-			ID: "123",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: 2,
-			},
-		})
-		np := *ng.nodePool
+		ng := initNodeGroup(3, &client)
 		// Delete first node,
-		client.On("DeleteNode", ctx, ng.clusterID, ng.id, "1").Return(nil).Once()
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, np.ID, uint32(1)).
-			Return(wait.ConditionFunc(func() (bool, error) { return true, nil })).Once()
+		client.On("DeleteKubernetesNode", ng.clusterID, ng.id, "1").Return(&http.Header{}, nil).Once()
+		// Poll 5 times before success
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(ng.nodePool, nil).Times(1)
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(initK8sNodePool(ng.nodePool.Properties.NodeCount - 1, "", profitbricks.StateAvailable), nil).Once()
 		// Delete second node
-		client.On("DeleteNode", ctx, ng.clusterID, ng.id, "2").Return(nil).Once()
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, np.ID, uint32(0)).
-			Return(wait.ConditionFunc(func() (bool, error) { return true, nil }))
-		// Delete third node
-		//		client.On("DeleteNode", ctx, ng.clusterID, ng.id, uint32(3)).Return(nil).Once()
-		//		newCount = *np.NodeCount - 1
-		//		np.NodeCount = &newCount
-		//		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, np.ID).
-		//			Return(wait.ConditionFunc(func() (bool, error) { return true, nil }))
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
+		client.On("DeleteKubernetesNode", ng.clusterID, ng.id, "2").Return(&http.Header{}, nil).Once()
+		// Poll 5 times before success
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(initK8sNodePool(ng.nodePool.Properties.NodeCount - 1, "", profitbricks.StateAvailable), nil).Times(1)
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(initK8sNodePool(ng.nodePool.Properties.NodeCount - 2, "", profitbricks.StateAvailable), nil).Once()
 		err := ng.DeleteNodes(nodes[0:2])
+		client.AssertExpectations(t)
 		assert.NoError(t, err)
 	})
 
 	t.Run("client node deletion fails", func(t *testing.T) {
-		ng := testNodeGroup(&client, &profitbricks.KubernetesNodePool{
-			ID: "123",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: 3,
-			},
-		})
-		np := *ng.nodePool
+		ng := initNodeGroup(3, &client)
 		// Delete first node
-		client.On("DeleteNode", ctx, ng.clusterID, ng.id, "1").Return(nil).Once()
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, np.ID, uint32(2)).
-			Return(wait.ConditionFunc(func() (bool, error) { return true, nil })).Once()
+		client.On("DeleteKubernetesNode", ng.clusterID, ng.id, "1").Return(&http.Header{}, nil).Once()
+		// Poll 5 times before success
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(ng.nodePool, nil).Times(4)
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(initK8sNodePool(ng.nodePool.Properties.NodeCount - 1, "", profitbricks.StateAvailable), nil).Once()
 		// Fail on second node
-		client.On("DeleteNode", ctx, ng.clusterID, ng.id, "2").
-			Return(errors.New("Uups something went wrong.")).Once()
-		client.On("PollInterval").Return(1 * time.Second)
-		client.On("PollTimeout").Return(2 * time.Second)
-		client.On("PollNodePoolNodeCount", ctx, ng.clusterID, np.ID, uint32(1)).
-			Return(wait.ConditionFunc(func() (bool, error) { return false, nil }))
+		client.On("DeleteKubernetesNode", ng.clusterID, ng.id, "2").
+			Return(&http.Header{}, errors.New("Uups something went wrong.")).Once()
 
 		err := ng.DeleteNodes(nodes)
-		assert.Error(t, err)
+		assert.EqualError(t, err,
+			fmt.Sprintf("deleting node failed for cluster: \"%s\" node pool: \"%s\" node: \"%s\": Uups something went wrong.",
+			ng.clusterID, ng.id, "2"))
+	})
+
+	t.Run("client node deletion times out", func(t *testing.T) {
+		ng := initNodeGroup(3, &client)
+		// Delete first node
+		client.On("DeleteKubernetesNode", ng.clusterID, ng.id, "1").Return(&http.Header{}, nil).Once()
+		// Poll does not success
+		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
+			Return(ng.nodePool, nil)
+
+		err := ng.DeleteNodes(nodes)
+		assert.EqualError(t, err, "failed to wait for nodepool update: timed out waiting for the condition")
 	})
 }
 
 func TestNodeGroup_Nodes(t *testing.T) {
-	ctx := context.TODO()
-
 	numberOfNodes := uint32(3)
-	client := ionosmock.Client{}
-	ng := testNodeGroup(&client, &profitbricks.KubernetesNodePool{
-		ID: "123",
-		Properties: &profitbricks.KubernetesNodePoolProperties{
-			NodeCount: numberOfNodes,
-		},
-		// AutoscalingLimitMin: 1,
-		// AutoscalingLimitMax: 10,
-	})
+	ionosclient := ionosmock.Client{}
+	ng := initNodeGroup(numberOfNodes, &ionosclient)
 
 	t.Run("success", func(t *testing.T) {
-		client.On("GetNodes", ctx, ng.clusterID, ng.id).Return([]profitbricks.KubernetesNode{
-			{
-				ID: "1",
-				Metadata: &profitbricks.Metadata{
-					State: profitbricks.StateAvailable,
+		ionosclient.On("ListKubernetesNodes", ng.clusterID, ng.id).Return(
+			&profitbricks.KubernetesNodes{
+				Items: []profitbricks.KubernetesNode{
+				{
+					ID: "1",
+					Metadata: &profitbricks.Metadata{
+						State: profitbricks.StateAvailable,
+					},
 				},
-			},
-			{
-				ID: "2",
-				Metadata: &profitbricks.Metadata{
-					State: profitbricks.StateBusy,
+				{
+					ID: "2",
+					Metadata: &profitbricks.Metadata{
+						State: profitbricks.StateBusy,
+					},
 				},
-			},
-			{
-				ID: "3",
-				Metadata: &profitbricks.Metadata{
-					State: profitbricks.StateInactive,
+				{
+					ID: "3",
+					Metadata: &profitbricks.Metadata{
+						State: profitbricks.StateInactive,
+					},
 				},
-			},
-			{
-				ID: "4",
-				Metadata: &profitbricks.Metadata{
-					State: profitbricks.StateUnknown,
+				{
+					ID: "4",
+					Metadata: &profitbricks.Metadata{
+						State: profitbricks.StateUnknown,
+					},
 				},
 			},
 		}, nil).Once()
@@ -512,8 +437,12 @@ func TestNodeGroup_Nodes(t *testing.T) {
 	})
 
 	t.Run("failure (nil node pool)", func(t *testing.T) {
-		client := ionosmock.Client{}
-		ng := testNodeGroup(&client, nil)
+		client := client{
+			Client: &ionosclient,
+			pollInterval: time.Millisecond * 10,
+			pollTimeout: time.Millisecond * 100,
+		}
+		ng := testNodeGroup(client, nil)
 		exp := errors.New("node pool instance is not created")
 
 		_, err := ng.Nodes()
@@ -522,7 +451,7 @@ func TestNodeGroup_Nodes(t *testing.T) {
 
 	t.Run("failure (client GetNodes fails)", func(t *testing.T) {
 		e := errors.New("Uups something went wrong")
-		client.On("GetNodes", ctx, ng.clusterID, ng.id).
+		ionosclient.On("ListKubernetesNodes", ng.clusterID, ng.id).
 			Return(nil, e)
 		exp := fmt.Errorf("getting nodes for cluster: %q node pool: %q: %v", ng.clusterID, ng.id, e)
 
@@ -536,14 +465,7 @@ func TestNodeGroup_Debug(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		numberOfNodes := uint32(3)
 		client := ionosmock.Client{}
-		ng := testNodeGroup(&client, &profitbricks.KubernetesNodePool{
-			ID: "123",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: numberOfNodes,
-			},
-			// AutoscalingLimitMin: 1,
-			// AutoscalingLimitMax: 3
-		})
+		ng := initNodeGroup(numberOfNodes, &client)
 
 		d := ng.Debug()
 		exp := "cluster ID: 12345, nodegroup ID: 123 (min: 1, max: 3)"
@@ -552,24 +474,22 @@ func TestNodeGroup_Debug(t *testing.T) {
 }
 
 func TestNodeGroup_Exist(t *testing.T) {
-	client := ionosmock.Client{}
+	ionosclient := ionosmock.Client{}
 
 	t.Run("success", func(t *testing.T) {
 		numberOfNodes := uint32(3)
-		ng := testNodeGroup(&client, &profitbricks.KubernetesNodePool{
-			ID: "123",
-			Properties: &profitbricks.KubernetesNodePoolProperties{
-				NodeCount: numberOfNodes,
-			},
-			// AutoscalingLimitMin: 1,
-			// AutoscalingLimitMax: 10,
-		})
+		ng := initNodeGroup(numberOfNodes, &ionosclient)
 		exist := ng.Exist()
 		assert.Equal(t, true, exist, "node pool should exist")
 	})
 
 	t.Run("failure", func(t *testing.T) {
-		ng := testNodeGroup(&client, nil)
+		client := client{
+			Client: &ionosclient,
+			pollInterval: time.Millisecond * 10,
+			pollTimeout: time.Millisecond * 100,
+		}
+		ng := testNodeGroup(client, nil)
 		exist := ng.Exist()
 		assert.Equal(t, false, exist, "node pool should not exist")
 	})

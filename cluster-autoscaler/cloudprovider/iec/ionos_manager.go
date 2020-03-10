@@ -1,7 +1,6 @@
 package iec
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,7 +13,7 @@ import (
 // Manager handles Ionos Enterprise Cloud communication and data caching of
 // node groups (node pools in IEC)
 type Manager struct {
-	ionosClient  Client
+	ionosClient  client
 	clusterID    string
 	nodeGroups   []*NodeGroup
 	pollTimeout  time.Duration
@@ -95,7 +94,11 @@ func CreateIECManager(configReader io.Reader) (*Manager, error) {
 	}
 
 	m := &Manager{
-		ionosClient: iecClient,
+		ionosClient: client{
+			Client: iecClient,
+			pollInterval: interval,
+			pollTimeout: timeout,
+		},
 		clusterID:   cfg.ClusterID,
 		nodeGroups:  make([]*NodeGroup, 0),
 	}
@@ -107,8 +110,7 @@ func CreateIECManager(configReader io.Reader) (*Manager, error) {
 // on the `--scan-interval`. By default it's 10 seconds.
 func (m *Manager) Refresh() error {
 	klog.V(4).Info("Refreshing")
-	ctx := context.Background()
-	nodePools, err := m.ionosClient.ListNodePools(ctx, m.clusterID)
+	nodePools, err := m.ionosClient.ListKubernetesNodePools(m.clusterID)
 	if err != nil {
 		klog.Errorf("eroor getting nodepools: %v", err)
 		return err
@@ -116,7 +118,7 @@ func (m *Manager) Refresh() error {
 
 	var groups []*NodeGroup
 
-	for _, nodePool := range nodePools {
+	for _, nodePool := range nodePools.Items {
 
 		// TODO: Include this as soon as autoscaling limits are part of the nodepool on ionos side
 		// AutoscalingLimit not set, autoscaling is disabled for this nodepool
