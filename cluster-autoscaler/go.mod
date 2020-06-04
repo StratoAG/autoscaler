@@ -7,6 +7,7 @@ module k8s.io/autoscaler/cluster-autoscaler
 go 1.13
 
 require (
+	bou.ke/monkey v1.0.2
 	cloud.google.com/go v0.38.0
 	github.com/Azure/azure-sdk-for-go v40.2.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.9.6
@@ -19,6 +20,7 @@ require (
 	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
 	github.com/json-iterator/go v1.1.8
 	github.com/pkg/errors v0.9.1
+	github.com/profitbricks/profitbricks-sdk-go/v5 v5.0.11
 	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.4.0
@@ -376,5 +378,11 @@ replace (
 replace github.com/digitalocean/godo => github.com/digitalocean/godo v1.27.0
 
 replace github.com/rancher/go-rancher => github.com/rancher/go-rancher v0.1.0
+
+replace github.com/vektra/mockery => github.com/vektra/mockery v0.0.0-20181123154057-e78b021dcbb5
+
+replace github.com/profitbricks/profitbricks-sdk-go/v5 => /Users/schegi/git/go/src/github.com/StratoAG/profitbricks-sdk-go
+
+replace bou.ke/monkey => bou.ke/monkey v1.0.2
 
 replace k8s.io/kubernetes => /tmp/autoscaler/kubernetes

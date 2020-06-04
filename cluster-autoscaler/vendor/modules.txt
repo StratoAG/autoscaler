@@ -1,3 +1,5 @@
+# bou.ke/monkey v1.0.2 => bou.ke/monkey v1.0.2
+bou.ke/monkey
 # cloud.google.com/go v0.38.0 => cloud.google.com/go v0.38.0
 cloud.google.com/go/compute/metadata
 # github.com/Azure/azure-sdk-for-go v40.2.0+incompatible => github.com/Azure/azure-sdk-for-go v40.2.0+incompatible
@@ -221,6 +223,8 @@ github.com/go-openapi/swag
 # github.com/go-ozzo/ozzo-validation v3.5.0+incompatible => github.com/go-ozzo/ozzo-validation v3.5.0+incompatible
 github.com/go-ozzo/ozzo-validation
 github.com/go-ozzo/ozzo-validation/is
+# github.com/go-resty/resty/v2 v2.0.0
+github.com/go-resty/resty/v2
 # github.com/godbus/dbus v0.0.0-20190422162347-ade71ed3457e => github.com/godbus/dbus v0.0.0-20190422162347-ade71ed3457e
 github.com/godbus/dbus
 # github.com/gogo/protobuf v1.3.1 => github.com/gogo/protobuf v1.3.1
@@ -427,6 +431,8 @@ github.com/opencontainers/selinux/go-selinux/label
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0 => github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
+# github.com/profitbricks/profitbricks-sdk-go/v5 v5.0.11 => /Users/schegi/git/go/src/github.com/StratoAG/profitbricks-sdk-go
+github.com/profitbricks/profitbricks-sdk-go/v5
 # github.com/prometheus/client_golang v1.0.0 => github.com/prometheus/client_golang v1.0.0
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/internal
@@ -581,6 +587,7 @@ golang.org/x/net/internal/timeseries
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
 golang.org/x/net/proxy
+golang.org/x/net/publicsuffix
 golang.org/x/net/trace
 golang.org/x/net/websocket
 # golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 => golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
