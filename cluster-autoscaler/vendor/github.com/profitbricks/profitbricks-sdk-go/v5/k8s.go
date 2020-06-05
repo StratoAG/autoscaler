@@ -94,10 +94,10 @@ type MaintenanceWindow struct {
 type Autoscaling struct {
 	// The minimum number of worker nodes that the
 	// managed node group can scale in.
-	MinNodeCount int32 `json:"minNodeCount,omitempty"`
+	MinNodeCount uint32 `json:"minNodeCount,omitempty"`
 	// The maximum number of worker nodes that the
 	// managed node pool can scale-out.
-	MaxNodeCount int32 `json:"maxNodeCount,omitempty"`
+	MaxNodeCount uint32 `json:"maxNodeCount,omitempty"`
 }
 
 type KubernetesClusterProperties struct {
