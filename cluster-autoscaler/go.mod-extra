@@ -4,7 +4,10 @@ go 1.12
 require (
   github.com/digitalocean/godo v1.27.0
   github.com/rancher/go-rancher v0.1.0
+  github.com/vektra/mockery v0.0.0-20181123154057-e78b021dcbb5
+  github.com/profitbricks/profitbricks-sdk-go/v5 v5.0.11
 )
 
 replace (
+  github.com/profitbricks/profitbricks-sdk-go/v5 => /Users/schegi/git/go/src/github.com/StratoAG/profitbricks-sdk-go
 )
