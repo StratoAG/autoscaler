@@ -16,6 +16,7 @@ require (
 	github.com/aws/aws-sdk-go v1.28.2
 	github.com/digitalocean/godo v1.27.0
 	github.com/ghodss/yaml v1.0.0
+	github.com/hashicorp/go-multierror v1.1.0
 	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
 	github.com/json-iterator/go v1.1.8
 	github.com/pkg/errors v0.9.1
@@ -381,5 +382,7 @@ replace github.com/rancher/go-rancher => github.com/rancher/go-rancher v0.1.0
 replace github.com/vektra/mockery => github.com/vektra/mockery v0.0.0-20181123154057-e78b021dcbb5
 
 replace github.com/profitbricks/profitbricks-sdk-go/v5 => /Users/schegi/git/go/src/github.com/StratoAG/profitbricks-sdk-go
+
+replace github.com/hashicorp/go-multierror => github.com/hashicorp/go-multierror v1.1.0
 
 replace k8s.io/kubernetes => /tmp/autoscaler/kubernetes
