@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/profitbricks/profitbricks-sdk-go/v5"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog"
 	"strings"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -46,6 +47,7 @@ func (n *NodeGroup) TargetSize() (int, error) {
 
 // Increases node group size
 func (n *NodeGroup) IncreaseSize(delta int) error {
+	klog.V(3).Infof("Increasing nodegroup %s size, current: %d, delta: %d", n.id, n.nodePool.Properties.NodeCount, delta)
 	if delta <= 0 {
 		return fmt.Errorf("delta must be positive, have: %d", delta)
 	}
@@ -57,15 +59,17 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 			n.nodePool.Properties.NodeCount, targetSize, n.MaxSize())
 	}
 
-	upgradeInput := *n.nodePool
-	upgradeInputProperties := *upgradeInput.Properties
-	upgradeInputProperties.NodeCount = targetSize
-	upgradeInput.Properties = &upgradeInputProperties
+	upgradeInput := profitbricks.KubernetesNodePool{
+		Properties: &profitbricks.KubernetesNodePoolProperties{
+			NodeCount: targetSize,
+		},
+	}
 
 	_, err := n.ionosClient.UpdateKubernetesNodePool(n.clusterID, n.nodePool.ID, upgradeInput)
 	if err != nil {
 		return err
 	}
+	klog.V(3).Infof("Waiting for %v nodepool to reach target size. Polling every %v.", n.ionosClient.PollTimeout(), n.ionosClient.PollInterval())
 	err = wait.PollImmediate(
 		n.ionosClient.PollInterval(),
 		n.ionosClient.PollTimeout(),
@@ -86,7 +90,9 @@ func (n *NodeGroup) IncreaseSize(delta int) error {
 // given node doesn't belong to this node group. This function should wait
 // until node group size is updated. Implementation required.
 func (n *NodeGroup) DeleteNodes(kubernetesNodes []*apiv1.Node) error {
+	klog.V(3).Infof("Deleting %d nodes", len(kubernetesNodes))
 	for _, node := range kubernetesNodes {
+		klog.V(3).Infof("Deleting node %s with id %s", node.Name, node.Spec.ProviderID)
 		// Use node.Spec.ProviderID as to retrieve nodeID
 		nodeID := strings.TrimPrefix(node.Spec.ProviderID, providerIDPrefix)
 		_, err := n.ionosClient.DeleteKubernetesNode(n.clusterID, n.id, nodeID)
@@ -157,16 +163,20 @@ func (n *NodeGroup) Debug() string {
 // required that Instance objects returned by this method have Id field set.
 // Other fields are optional.
 func (n *NodeGroup) Nodes() ([]cloudprovider.Instance, error) {
+	klog.V(5).Infof("Getting nodes for nodegroup: %s", n.id )
 	if n.nodePool == nil {
+		klog.Errorf("No nodepool associated with nodegroup: %s", n.id)
 		return nil, errors.New("node pool instance is not created")
 	}
-	nodes, err := n.ionosClient.ListKubernetesNodes(n.clusterID, n.id)
+	nodes, err := n.ionosClient.ListKubernetesNodes(n.clusterID, n.nodePool.ID)
+
 	if err != nil {
+		klog.Errorf("Error getting nodes for nodegroup: %s", n.id)
 		return nil, fmt.Errorf("getting nodes for cluster: %q node pool: %q: %v",
 			n.clusterID, n.id, err)
 	}
-
-	return toInstances(nodes), nil
+	instances := toInstances(nodes)
+	return instances, nil
 }
 
 // TemplateNodeInfo returns a schedulerframework.NodeInfo structure of an empty

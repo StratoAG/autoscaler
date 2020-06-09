@@ -67,23 +67,24 @@ func (d *IECCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 // occurred. Must be implemented.
 func (d *IECCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.NodeGroup, error) {
 	providerID := node.Spec.ProviderID
-	klog.V(5).Infof("checking nodegroup for node ID: %q", providerID)
+	klog.V(4).Infof("checking nodegroups for node ID: %q", providerID)
 
 	// NOTE(arslan): the number of node groups per cluster is usually very
 	// small. So even though this looks like quadratic runtime, it's OK to
 	// proceed with this.
 	for _, group := range d.manager.GetNodeGroups() {
-		klog.V(5).Infof("iterating over node group %q", group.Id())
+		klog.V(5).Infof("checking nodegroup %q", group.Id())
 		nodes, err := group.Nodes()
 		if err != nil {
 			return nil, err
 		}
 
 		for _, n := range nodes {
-			klog.V(6).Infof("checking node have: %q want: %q", n.Id, providerID)
+			klog.V(5).Infof("checking node have: %q want: %q", n.Id, providerID)
 			if n.Id != providerID {
 				continue
 			}
+			klog.V(4).Infof("Node %s found in group: %s", providerID, group.Id())
 
 			return group, nil
 		}
@@ -156,7 +157,7 @@ var (
 	createManagerFromFile = createManager
 	createIECManager      = CreateIECManager
 	logFatal              = klog.Fatalf
-	open				  = os.Open
+	open                  = os.Open
 )
 
 func closeFile(file io.ReadCloser) {
@@ -164,6 +165,7 @@ func closeFile(file io.ReadCloser) {
 }
 
 func createManager(config string) (IECManager, error) {
+	klog.V(4).Infof("Building manager from config file: %s", config)
 	var configFile io.ReadCloser
 	if config != "" {
 		var err error
@@ -182,6 +184,7 @@ func BuildIEC(
 	do cloudprovider.NodeGroupDiscoveryOptions,
 	rl *cloudprovider.ResourceLimiter,
 ) cloudprovider.CloudProvider {
+	klog.V(4).Info("Building IEC manager")
 	manager, err := createManagerFromFile(opts.CloudConfig)
 	if err != nil {
 		logFatal("Failed to create Ionos Enterprise manager: %v", err)

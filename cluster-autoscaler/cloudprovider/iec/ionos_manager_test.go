@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/iec/mocks"
+	"os"
 	"testing"
 	"time"
 )
@@ -138,6 +139,25 @@ func TestNewManager(t *testing.T) {
 		assert.Equal(t, "12345", manager.GetClusterID(), "cluster ID does not match")
 	})
 
+	t.Run("success, manager creation all from env", func(t *testing.T) {
+		cfg := `{"cluster_id": "", "ionos_token": ""}`
+		os.Setenv(ionosClusterID, "54321")
+		os.Setenv(ionosToken, "secret_ionos_token")
+		os.Setenv(ionosURL, "https://api.ionos.com")
+		os.Setenv(ionosAuthURL, "https://auth.ionos.com")
+		os.Setenv(ionosPollTimeout, "3m")
+		os.Setenv(ionosPollInterval, "30s")
+		manager, err := CreateIECManager(bytes.NewBufferString(cfg))
+		assert.NoError(t, err)
+		assert.Equal(t, "54321", manager.GetClusterID(), "cluster ID does not match")
+		os.Unsetenv(ionosClusterID)
+		os.Unsetenv(ionosToken)
+		os.Unsetenv(ionosURL)
+		os.Unsetenv(ionosAuthURL)
+		os.Unsetenv(ionosPollTimeout)
+		os.Unsetenv(ionosPollInterval)
+	})
+
 	t.Run("success, manager creation with durations", func(t *testing.T) {
 		cfg := `{"cluster_id": "12345", "ionos_token": "secret_ionos_token", "poll_timeout": "300ms", "poll_interval": "3s"}`
 		manager, err := CreateIECManager(bytes.NewBufferString(cfg))
@@ -156,6 +176,22 @@ func TestNewManager(t *testing.T) {
 		read = ioutil.ReadAll
 	})
 
+	t.Run("failure, malformed json", func(t *testing.T) {
+		_, err := CreateIECManager(bytes.NewBufferString("{"))
+		assert.Error(t, err, "error expected")
+
+	})
+
+	t.Run("failure, creating new client", func(t *testing.T) {
+		cfg := `{"cluster_id": "12345", "ionos_token": "token"}`
+		createClient = func(token, url, authUrl string, timeout, interval time.Duration) (Client, error) {
+			return &mocks.Client{}, errors.New("oops, something went wrong")
+		}
+		_, err := CreateIECManager(bytes.NewBufferString(cfg))
+		assert.Error(t, err, "error expected")
+		createClient = newClient
+	})
+
 	tests := []struct {
 		name,
 		cfg string
@@ -172,9 +208,6 @@ func TestNewManager(t *testing.T) {
 		}, {
 			name: "failure, manager creation with wrong pollTimeout",
 			cfg:  `{"cluster_id": "12345", "ionos_token": "token", "poll_interval": "3X"}`,
-		}, {
-			name: "failure, malformed json",
-			cfg:  "{",
 		},
 	}
 	for _, tc := range tests {
@@ -183,16 +216,6 @@ func TestNewManager(t *testing.T) {
 			assert.Error(t, err, "error expected")
 		})
 	}
-
-	t.Run("failure, creating new client", func(t *testing.T) {
-		cfg := `{"cluster_id": "12345", "ionos_token": "token"}`
-		createClient = func(token, url, authUrl string, timeout, interval time.Duration) (Client, error) {
-			return &mocks.Client{}, errors.New("oops, something went wrong")
-		}
-		_, err := CreateIECManager(bytes.NewBufferString(cfg))
-		assert.Error(t, err, "error expected")
-		createClient = newClient
-	})
 }
 
 func TestIECManager_Refresh(t *testing.T) {

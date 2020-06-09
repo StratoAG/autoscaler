@@ -109,8 +109,13 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, 1, 6, &client)
 
 		newCount := numberOfNodes + delta
+		update := &profitbricks.KubernetesNodePool{
+			Properties: &profitbricks.KubernetesNodePoolProperties{
+				NodeCount: newCount,
+			},
+		}
 		updated := initK8sNodePool(newCount, 1,6, "123", profitbricks.StateAvailable)
-		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *update).
 			Return(updated, nil).Once()
 		// Poll 5 times before it became true
 		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
@@ -130,9 +135,14 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, 1, 10, &client)
 
 		newCount := numberOfNodes + delta
+		update := &profitbricks.KubernetesNodePool{
+			Properties: &profitbricks.KubernetesNodePoolProperties{
+				NodeCount: newCount,
+			},
+		}
 		updated := initK8sNodePool(newCount, 1, 10, "123", profitbricks.StateAvailable)
 
-		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *update).
 			Return(updated, nil).Once()
 		// Poll 5 times before it became true
 		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
@@ -186,11 +196,16 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, 1, 3, &client)
 
 		newCount := numberOfNodes + delta
+		update := &profitbricks.KubernetesNodePool{
+			Properties: &profitbricks.KubernetesNodePoolProperties{
+				NodeCount: newCount,
+			},
+		}
 		updated := initK8sNodePool(newCount, 1, 3,"123", profitbricks.StateAvailable)
 
 		pollError := errors.New("Oops something went wrong")
 
-		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *update).
 			Return(updated, nil).Once()
 		// Poll 5 times before it errors
 		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
@@ -211,11 +226,16 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, 1, 3, &client)
 
 		newCount := numberOfNodes + delta
+		update := &profitbricks.KubernetesNodePool{
+			Properties: &profitbricks.KubernetesNodePoolProperties{
+				NodeCount: newCount,
+			},
+		}
 		updated := initK8sNodePool(newCount, 1, 3, "123", profitbricks.StateAvailable)
 
 		pollError := errors.New("timed out waiting for the condition")
 
-		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *update).
 			Return(updated, nil).Once()
 		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
 			Return(ng.nodePool, nil)
@@ -245,8 +265,13 @@ func TestNodeGroup_IncreaseSize(t *testing.T) {
 		ng := initNodeGroup(numberOfNodes, 1, 5, &client)
 
 		newCount := numberOfNodes + delta
+		update := &profitbricks.KubernetesNodePool{
+			Properties: &profitbricks.KubernetesNodePoolProperties{
+				NodeCount: newCount,
+			},
+		}
 		updated := initK8sNodePool(newCount, 1, 5,"123", profitbricks.StateAvailable)
-		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *updated).
+		client.On("UpdateKubernetesNodePool", ng.clusterID, ng.id, *update).
 			Return(updated, nil).Once()
 		// Poll 5 times before it became true
 		client.On("GetKubernetesNodePool", ng.clusterID, ng.nodePool.ID).
@@ -450,7 +475,7 @@ func TestNodeGroup_Nodes(t *testing.T) {
 	ng := initNodeGroup(numberOfNodes, 1, 5, &ionosclient)
 
 	t.Run("success", func(t *testing.T) {
-		ionosclient.On("ListKubernetesNodes", ng.clusterID, ng.id).Return(
+		ionosclient.On("ListKubernetesNodes", ng.clusterID, ng.nodePool.ID).Return(
 			&profitbricks.KubernetesNodes{
 				Items: []profitbricks.KubernetesNode{
 				{

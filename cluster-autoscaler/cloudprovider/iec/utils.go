@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/profitbricks/profitbricks-sdk-go/v5"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 )
 
 const (

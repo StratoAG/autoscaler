@@ -3,22 +3,37 @@ package iec
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
 	"k8s.io/klog"
 )
 
 // IECManagerImpl handles Ionos Enterprise Cloud communication and data caching of
 // node groups (node pools in IEC)
-
 type IECManagerImpl struct {
 	ionosClient  client
 	clusterID    string
 	nodeGroups   []*NodeGroup
 }
 
+var (
+	read = ioutil.ReadAll
+	createClient = newClient
+)
+
+const (
+	ionosToken = "IONOS_TOKEN"
+	ionosURL = "IONOS_URL"
+	ionosAuthURL = "IONOS_AUTH_URL"
+	ionosClusterID = "IONOS_CLUSTER_ID"
+	ionosPollTimeout = "IONOS_POLL_TIMEOUT"
+	ionosPollInterval = "IONOS_POLL_INTERVAL"
+)
 
 type Config struct {
 	// IonosToken is the authentication token used by the Ionos Enterprise Cloud
@@ -44,47 +59,103 @@ type Config struct {
 	PollInterval string `json:"poll_interval"`
 }
 
-var (
-	read = ioutil.ReadAll
-	createClient = newClient
-)
-
-func CreateIECManager(configReader io.Reader) (IECManager, error) {
-	cfg := &Config{}
-	if configReader != nil {
-		body, err := read(configReader)
-		if err != nil {
-			return nil, err
-		}
-		err = json.Unmarshal(body, cfg)
-		if err != nil {
-			return nil, err
+func (c *Config) processConfig() (timeout, interval time.Duration, err error) {
+	klog.V(4).Info("Processing config")
+	var result *multierror.Error
+	if c.IonosToken ==  "" {
+		if value, ok := os.LookupEnv(ionosToken); ok {
+			klog.V(4).Info("Got token in env")
+			c.IonosToken = value
+		} else {
+			klog.V(5).Info("Failed to get IEC access token.")
+			 result = multierror.Append(result, errors.New("IOC access token is not provided"))
 		}
 	}
 
-	if cfg.IonosToken == "" {
-		return nil, errors.New("iec access token is not provided")
+	if c.IonosURL == "" {
+		if value, ok := os.LookupEnv(ionosURL); ok {
+			klog.V(4).Info("Got url in env")
+			c.IonosURL = value
+		} else {
+		}
 	}
 
-	if cfg.ClusterID == "" {
-		return nil, errors.New("cluster ID is not provided")
+	if c.IonosAuthURL == "" {
+		if value, ok := os.LookupEnv(ionosAuthURL); ok {
+			klog.V(4).Info("Got auth_url in env")
+			c.IonosAuthURL = value
+		}
 	}
 
-	timeout := 15 * time.Minute
-	if cfg.PollTimeout != "" {
-		t, err := time.ParseDuration(cfg.PollTimeout)
+	if c.ClusterID == "" {
+		if value, ok := os.LookupEnv(ionosClusterID); ok {
+			klog.V(4).Info("Got clusterID in env")
+			c.ClusterID = value
+		} else {
+			klog.V(5).Info("Failed to get cluster ID.")
+			result = multierror.Append(errors.New("cluster id is not provided"), )
+		}
+	}
+
+	if c.PollTimeout == "" {
+		if value, ok := os.LookupEnv(ionosPollTimeout); ok {
+			klog.V(4).Info("Got poll timeout in env")
+			c.PollTimeout = value
+		}
+	}
+	timeout = 20 * time.Minute
+	if c.PollTimeout != "" {
+		t, err := time.ParseDuration(c.PollTimeout)
 		if err != nil {
-			return nil, errors.New("error parsing poll timeout")
+			result = multierror.Append(result, errors.New("error parsing poll timeout"))
 		}
 		timeout = t
 	}
-	interval := 5 * time.Second
-	if cfg.PollInterval != "" {
-		i, err := time.ParseDuration(cfg.PollInterval)
+
+	if c.PollInterval == "" {
+		if value, ok := os.LookupEnv(ionosPollInterval); ok {
+			klog.V(4).Info("Got poll interval in env")
+			c.PollInterval = value
+		}
+	}
+	interval = 20 * time.Second
+	if c.PollInterval != "" {
+		i, err := time.ParseDuration(c.PollInterval)
 		if err != nil {
-			return nil, errors.New("error parsing poll interval")
+			result = multierror.Append(result, errors.New("error parsing poll interval"))
 		}
 		interval = i
+	}
+	fmt.Printf("Result: %v", result)
+
+	return timeout, interval, result.ErrorOrNil()
+}
+
+func CreateIECManager(configReader io.Reader) (IECManager, error) {
+	klog.V(4).Info("Creating IEC manager")
+	cfg := &Config{}
+	if configReader != nil {
+		klog.V(5).Info("Reading from config reader")
+		body, err := read(configReader)
+		if err != nil {
+			klog.Error("Error reading from config reader")
+			return nil, err
+		}
+		klog.V(5).Infof("Unmarshaling config json: %s", string(body))
+		err = json.Unmarshal(body, cfg)
+		if err != nil {
+			klog.Errorf("Error unmarshaling config json: %s", body)
+			return nil, err
+		}
+	}
+
+	timeout, interval, err := cfg.processConfig()
+	fmt.Printf("Error: %v\n", err)
+
+	if err != nil {
+		fmt.Println("Error processing config")
+		klog.V(5).Infof("Error processing config, %v", err)
+		return nil, err
 	}
 
 	iecClient, err := createClient(
@@ -95,6 +166,7 @@ func CreateIECManager(configReader io.Reader) (IECManager, error) {
 		interval)
 
 	if err != nil {
+		klog.Errorf("Error creating IEC client, %v", err)
 		return nil, err
 	}
 
@@ -124,7 +196,7 @@ func (m *IECManagerImpl) Refresh() error {
 	var groups []*NodeGroup
 
 	for _, nodePool := range nodePools.Items {
-
+		klog.V(4).Infof("Processing nodepool: %s", nodePool.ID)
 		if nodePool.Properties.Autoscaling == nil {
 			klog.V(4).Infof("No autoscaling limit in nodepool, skipping: %v", nodePool)
 			continue
@@ -134,7 +206,7 @@ func (m *IECManagerImpl) Refresh() error {
 		// AutoscalingLimit.Max == 0, autoscaling is disabled for this nodepool
 		// AutoscalingLimit.Min cannot be 0, there is no way to scale out an empty nodepool
 		if min == uint32(0) && max == uint32(0) {
-			klog.V(4).Infof("Autoscaling limit min or max == 0, skipping: %v", nodePool)
+			klog.V(4).Infof("Autoscaling limit min and max == 0, skipping: %v", nodePool)
 			continue
 		}
 		name := nodePool.Properties.Name
@@ -149,7 +221,7 @@ func (m *IECManagerImpl) Refresh() error {
 			maxSize:     int(max),
 		})
 	}
-	klog.V(4).Infof("goups: %v", groups)
+	klog.V(4).Infof("groups: %+v", groups)
 
 	if len(groups) == 0 {
 		klog.V(4).Info("cluster-autoscaler is disabled. no node pools configured")
