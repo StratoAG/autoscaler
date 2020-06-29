@@ -433,7 +433,7 @@ github.com/opencontainers/selinux/go-selinux/label
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0 => github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/profitbricks/profitbricks-sdk-go/v5 v5.0.11 => ../../../github.com/StratoAG/profitbricks-sdk-go
+# github.com/profitbricks/profitbricks-sdk-go/v5 v5.0.11 => github.com/stratoag/profitbricks-sdk-go/v5 v5.0.2-0.20200629111938-4c150030dbdb
 github.com/profitbricks/profitbricks-sdk-go/v5
 # github.com/prometheus/client_golang v1.0.0 => github.com/prometheus/client_golang v1.0.0
 github.com/prometheus/client_golang/prometheus
